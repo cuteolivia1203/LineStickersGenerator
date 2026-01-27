@@ -7,139 +7,115 @@ import random
 from PIL import Image
 from rembg import remove
 
-# --- 語言字典設定 ---
-LANG = {
-    "繁體中文": {
-        "title": "🎨 專業 LINE 貼圖製作 Studio V11",
-        "char_label": "主角是誰？",
-        "char_pld": "例如: 穿西裝的橘貓...",
-        "detail_label": "動作與細節 (中英皆可)",
-        "detail_pld": "例如: 拿著咖啡杯, 正在工作...",
-        "style_label": "風格選擇",
-        "gen_btn": "🚀 開始批量生成",
-        "proc_btn": "🎯 選擇此張加工",
-        "export_title": "⚙️ 匯出中心",
-        "dl_stk": "💾 下載 Sticker (370x320)",
-        "dl_main": "🖼️ 下載 Main Icon (240x240)",
-        "dl_tab": "🔖 下載 Tab Icon (96x74)",
-        "refresh": "🔄 更換角色基因",
-    },
-    "English": {
-        "title": "🎨 Pro LINE Sticker Studio V11",
-        "char_label": "Who is the character?",
-        "char_pld": "e.g., An orange cat in a suit...",
-        "detail_label": "Actions & Details",
-        "detail_pld": "e.g., holding coffee, working...",
-        "style_label": "Art Style",
-        "gen_btn": "🚀 Start Batch Generation",
-        "proc_btn": "🎯 Process This One",
-        "export_title": "⚙️ Export Center",
-        "dl_stk": "💾 Download Sticker (370x320)",
-        "dl_main": "🖼️ Download Main Icon (240x240)",
-        "dl_tab": "🔖 Download Tab Icon (96x74)",
-        "refresh": "🔄 Change Character DNA",
-    }
+# --- 設定 ---
+st.set_page_config(page_title="Line Sticker Pro V12", layout="wide")
+
+# --- 語言與介面設定 ---
+if 'lang' not in st.session_state: st.session_state.lang = "English"
+
+# 頂部切換欄
+t1, t2 = st.columns([9, 1])
+with t2:
+    st.session_state.lang = st.selectbox("🌐", ["English", "繁體中文"], index=0 if st.session_state.lang=="English" else 1)
+
+L = {
+    "title": "Pro LINE Sticker Generator" if st.session_state.lang=="English" else "專業 LINE 貼圖生成器",
+    "who": "Who is the character?" if st.session_state.lang=="English" else "主角是誰？",
+    "action": "Actions & Details" if st.session_state.lang=="English" else "動作與細節描述",
+    "style": "Art Style" if st.session_state.lang=="English" else "美術風格",
+    "custom": "Custom Style (Optional)" if st.session_state.lang=="English" else "自訂風格 (選填)",
+    "gen_btn": "🚀 Start Batch Generation" if st.session_state.lang=="English" else "🚀 開始批次生成",
+    "export": "⚙️ Export Center" if st.session_state.lang=="English" else "⚙️ 匯出中心",
+    "redo": "🔄 Redo" if st.session_state.lang=="English" else "🔄 重試",
 }
 
-# --- 基礎設定 ---
-st.set_page_config(page_title="Line Sticker Pro", layout="wide")
-
-# 介面語言切換切換
-with st.container():
-    col_t, col_l = st.columns([8, 2])
-    with col_l:
-        lang_choice = st.selectbox("🌐 Language", ["繁體中文", "English"])
-    cur = LANG[lang_choice]
-
-st.title(cur["title"])
+st.title(f"✨ {L['title']}")
 
 # 初始化狀態
-if 'generated_images' not in st.session_state:
-    st.session_state.generated_images = []
-if 'current_seed' not in st.session_state:
-    st.session_state.current_seed = random.randint(1000, 9999)
+if 'imgs' not in st.session_state: st.session_state.imgs = [None] * 8
+if 'seed' not in st.session_state: st.session_state.seed = random.randint(1000, 9999)
 
-def get_sticker_file(img, size):
-    no_bg = remove(img)
-    no_bg.thumbnail(size, Image.Resampling.LANCZOS)
-    canvas = Image.new("RGBA", size, (0, 0, 0, 0))
-    offset = ((size[0] - no_bg.size[0]) // 2, (size[1] - no_bg.size[1]) // 2)
-    canvas.paste(no_bg, offset)
-    buf = io.BytesIO()
-    canvas.save(buf, format="PNG")
-    return buf.getvalue()
+def get_img(prompt, s):
+    url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?nologo=true&seed={s}&width=512&height=512"
+    try:
+        r = requests.get(url, timeout=20)
+        return Image.open(io.BytesIO(r.content)) if r.status_code == 200 else None
+    except: return None
 
-# --- UI 側邊欄 ---
-with st.sidebar:
-    st.header(cur["char_label"])
-    char_base = st.text_input(cur["char_label"], "A cute giraffe", label_visibility="collapsed")
+# --- UI 配置 ---
+col_left, col_right = st.columns([3, 1], gap="large")
+
+with col_left:
+    # 第一排：輸入區
+    c1, c2 = st.columns(2)
+    with c1:
+        char = st.text_area(L['who'], "A cute baby giraffe", height=100)
+    with c2:
+        detail = st.text_area(L['action'], "wearing a hoodie, studying with a laptop", height=100)
     
-    st.header(cur["detail_label"])
-    scenario = st.text_input(cur["detail_label"], "holding a coffee cup", label_visibility="collapsed")
-    
-    style_choice = st.selectbox(cur["style_label"], ["3D Pixar Render", "2D Flat Vector", "Crayon Style"])
-    
-    num_to_gen = st.slider("Quantity:", 1, 8, 4)
-    if st.button(cur["refresh"]):
-        st.session_state.current_seed = random.randint(1000, 9999)
-        st.session_state.generated_images = []
+    # 第二排：風格與數量
+    s1, s2, s3 = st.columns([1, 1, 1])
+    with s1:
+        preset_style = st.selectbox(L['style'], ["3D Pixar Render", "2D Flat Vector", "Crayon Style", "Custom"])
+    with s2:
+        custom_style = st.text_input(L['custom'], disabled=(preset_style != "Custom"))
+    with s3:
+        num = st.slider("Quantity", 1, 8, 4)
 
-# --- 生成邏輯 ---
-col_main, col_process = st.columns([3, 1])
-
-with col_main:
-    if st.button(cur["gen_btn"]):
-        # 這裡會自動加上 3D 或 2D 的強效指令，解決您之前 3D 變 2D 的問題
-        style_map = {
-            "3D Pixar Render": "3D Disney Pixar render, volumetric lighting, high detail, white background, isolated",
-            "2D Flat Vector": "flat vector art, clean thick lines, white background, isolated",
-            "Crayon Style": "crayon drawing, hand-drawn texture, white background, isolated"
-        }
-        actions = ["Happy", "Angry", "Sad", "Thinking", "Surprised", "Love", "Laughing", "Fighting"]
+    if st.button(L['gen_btn'], use_container_width=True, type="primary"):
+        st.session_state.imgs = [None] * 8 # 重置
+        final_style = custom_style if preset_style == "Custom" else preset_style
+        style_p = f"{final_style}, white background, isolated, high quality"
+        actions = ["Happy", "Angry", "Sad", "Surprised", "Love", "Laughing", "Thinking", "Fighting"]
         
-        st.session_state.generated_images = []
-        progress_bar = st.progress(0)
-        
-        for i in range(num_to_gen):
-            action = actions[i % len(actions)]
-            # 組合指令
-            full_prompt = f"{char_base}, {action}, {scenario}, {style_map[style_choice]}"
-            encoded = urllib.parse.quote(full_prompt)
-            seed = st.session_state.current_seed + i
-            url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=512&nologo=true&seed={seed}"
-            
-            try:
-                time.sleep(3) # 為了躲避 RATE LIMIT，間隔調長一點點
-                res = requests.get(url, timeout=30)
-                if res.status_code == 200:
-                    img = Image.open(io.BytesIO(res.content))
-                    st.session_state.generated_images.append({"img": img, "action": action})
-                progress_bar.progress((i + 1) / num_to_gen)
-            except:
-                continue
-        st.success("Success!")
+        for i in range(num):
+            prompt = f"{char}, {actions[i]}, {detail}, {style_p}"
+            # 逐張生成的視覺效果
+            with st.spinner(f"Creating {actions[i]}..."):
+                time.sleep(2) # 減少 Rate Limit 風險
+                res = get_img(prompt, st.session_state.seed + i)
+                if res: st.session_state.imgs[i] = {"img": res, "act": actions[i], "p": prompt}
+                st.rerun()
 
-    if st.session_state.generated_images:
-        cols = st.columns(4)
-        for idx, item in enumerate(st.session_state.generated_images):
-            with cols[idx % 4]:
-                st.image(item['img'], caption=item['action'])
-                if st.button(cur["proc_btn"], key=f"sel_{idx}"):
-                    st.session_state.selected_raw = item['img']
+# --- 中間下方：貼圖展示區 ---
+st.divider()
+if any(st.session_state.imgs):
+    m_cols = st.columns(4)
+    for i in range(8):
+        item = st.session_state.imgs[i]
+        if item:
+            with m_cols[i % 4]:
+                st.image(item['img'], caption=item['act'])
+                # 單張重製與選取
+                b1, b2 = st.columns(2)
+                if b1.button(L['redo'], key=f"redo_{i}"):
+                    with st.spinner("Refining..."):
+                        new_res = get_img(item['p'], random.randint(1, 9999))
+                        if new_res: 
+                            st.session_state.imgs[i]['img'] = new_res
+                            st.rerun()
+                if b2.button("🎯 Pick", key=f"pick_{i}"):
+                    st.session_state.selected = item['img']
 
-# --- 加工區 ---
-with col_process:
-    st.subheader(cur["export_title"])
-    if 'selected_raw' in st.session_state:
-        st.image(st.session_state.selected_raw, use_container_width=True)
+# --- 右側：匯出中心 ---
+with col_right:
+    st.subheader(L['export'])
+    container = st.container(border=True)
+    if 'selected' in st.session_state:
+        container.image(st.session_state.selected)
         
-        # 下載區域
-        with st.spinner("Preparing files..."):
-            stk_data = get_sticker_file(st.session_state.selected_raw, (370, 320))
-            st.download_button(cur["dl_stk"], stk_data, "sticker.png", "image/png")
-            
-            main_data = get_sticker_file(st.session_state.selected_raw, (240, 240))
-            st.download_button(cur["dl_main"], main_data, "main.png", "image/png")
-            
-            tab_data = get_sticker_file(st.session_state.selected_raw, (96, 74))
-            st.download_button(cur["dl_tab"], tab_data, "tab.png", "image/png")
+        def dl_btn(lbl, size, key):
+            # 自動去背與縮放邏輯
+            processed = remove(st.session_state.selected)
+            processed.thumbnail(size, Image.Resampling.LANCZOS)
+            bg = Image.new("RGBA", size, (0,0,0,0))
+            bg.paste(processed, ((size[0]-processed.size[0])//2, (size[1]-processed.size[1])//2))
+            buf = io.BytesIO()
+            bg.save(buf, format="PNG")
+            container.download_button(lbl, buf.getvalue(), f"{key}.png", "image/png", use_container_width=True)
+
+        dl_btn("💾 Sticker (370x320)", (370, 320), "stk")
+        dl_btn("🖼️ Main Icon (240x240)", (240, 240), "main")
+        dl_btn("🔖 Tab Icon (96x74)", (96, 74), "tab")
+    else:
+        container.info("Click 'Pick' on any image to export.")
